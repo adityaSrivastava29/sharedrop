@@ -1,1 +1,307 @@
 @import "tailwindcss";
+
+/* ===== Design System Custom Properties ===== */
+@theme {
+  /* Primary Colors - Blue (#60B5FF base) */
+  --color-primary-50: #f0f8ff;
+  --color-primary-100: #e0f1ff;
+  --color-primary-200: #afddff;
+  --color-primary-300: #8acfff;
+  --color-primary-400: #60b5ff;
+  --color-primary-500: #3da0f5;
+  --color-primary-600: #2b89e0;
+  --color-primary-700: #1e6fc0;
+  --color-primary-800: #1a5a9e;
+  --color-primary-900: #164a7d;
+  --color-primary-950: #0d2d4d;
+
+  /* Secondary/Accent Colors - Orange (#FF9149 base) */
+  --color-secondary-300: #ffb88a;
+  --color-secondary-400: #ff9149;
+  --color-secondary-500: #f07830;
+  --color-secondary-600: #d96020;
+
+  /* Success - Keep green */
+  --color-success-400: #4ade80;
+  --color-success-500: #22c55e;
+  --color-success-600: #16a34a;
+
+  /* Error - Use orange-red tones */
+  --color-error-400: #ff7b7b;
+  --color-error-500: #ef4444;
+  --color-error-600: #dc2626;
+
+  /* Warning - Orange tones */
+  --color-warning-400: #ffb44a;
+  --color-warning-500: #ff9149;
+  --color-warning-600: #e07030;
+
+  /* Surface colors - Warm cream/neutral tones (#FFECDB base for light) */
+  --color-surface-50: #fffbf7;
+  --color-surface-100: #ffecdb;
+  --color-surface-200: #ffe0c7;
+  --color-surface-300: #e8d5c4;
+  --color-surface-400: #a89080;
+  --color-surface-500: #7a6a5a;
+  --color-surface-600: #5a4a3a;
+  --color-surface-700: #3d3228;
+  --color-surface-800: #2a221a;
+  --color-surface-900: #1a140f;
+  --color-surface-950: #0d0a07;
+
+  /* Custom animations */
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-slide-up: slide-up 0.4s ease-out;
+  --animate-slide-down: slide-down 0.3s ease-out;
+  --animate-scale-in: scale-in 0.2s ease-out;
+  --animate-pulse-soft: pulse-soft 2s infinite;
+  --animate-shimmer: shimmer 2s infinite;
+  --animate-bounce-soft: bounce-soft 1s infinite;
+}
+
+/* ===== Keyframe Animations ===== */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { 
+    opacity: 0; 
+    transform: translateY(20px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+@keyframes slide-down {
+  from { 
+    opacity: 0; 
+    transform: translateY(-20px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+@keyframes scale-in {
+  from { 
+    opacity: 0; 
+    transform: scale(0.9); 
+  }
+  to { 
+    opacity: 1; 
+    transform: scale(1); 
+  }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes bounce-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ===== Base Styles ===== */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: linear-gradient(135deg, var(--color-surface-900) 0%, var(--color-primary-950) 50%, var(--color-surface-900) 100%);
+  color: var(--color-surface-100);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== Typography ===== */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-surface-50);
+}
+
+/* ===== Utility Classes ===== */
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.glass-light {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.gradient-primary {
+  background: linear-gradient(135deg, var(--color-primary-500) 0%, var(--color-secondary-500) 100%);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--color-primary-400) 0%, var(--color-secondary-400) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.glow {
+  box-shadow: 0 0 40px rgba(96, 181, 255, 0.3);
+}
+
+.glow-sm {
+  box-shadow: 0 0 20px rgba(96, 181, 255, 0.2);
+}
+
+/* ===== Focus States ===== */
+:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
+}
+
+/* ===== Selection ===== */
+::selection {
+  background: var(--color-primary-500);
+  color: white;
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-surface-800);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-600);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-surface-500);
+}
+
+/* ===== Transitions ===== */
+.transition-all-fast {
+  transition: all 0.15s ease;
+}
+
+.transition-all-normal {
+  transition: all 0.3s ease;
+}
+
+/* ===== Card Hover Effect ===== */
+.card-hover {
+  transition: all 0.3s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+/* ===== Loading Spinner ===== */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* ===== QR Code Container ===== */
+.qr-container {
+  background: white;
+  padding: 1rem;
+  border-radius: 1rem;
+  display: inline-block;
+}
+
+/* ===== Drag and Drop Zone ===== */
+.drop-zone {
+  border: 2px dashed var(--color-surface-600);
+  transition: all 0.3s ease;
+}
+
+.drop-zone:hover,
+.drop-zone.active {
+  border-color: var(--color-primary-500);
+  background: rgba(96, 181, 255, 0.1);
+}
+
+/* ===== Progress Bar ===== */
+.progress-track {
+  background: var(--color-surface-700);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, var(--color-primary-500) 0%, var(--color-secondary-500) 100%);
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+/* ===== Toast Animations ===== */
+.toast-enter {
+  animation: slide-down 0.3s ease-out;
+}
+
+.toast-exit {
+  animation: fade-out 0.2s ease-in forwards;
+}
+
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* ===== Monospace (for Peer IDs) ===== */
+.font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+/* ===== Status Badge Pulse ===== */
+.status-pulse {
+  animation: pulse-soft 2s infinite;
+}
+
+/* ===== Mobile Touch Targets ===== */
+@media (max-width: 640px) {
+  .touch-target {
+    min-height: 48px;
+    min-width: 48px;
+  }
+}
