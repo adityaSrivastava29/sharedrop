@@ -4,9 +4,11 @@ function App() {
 
   return (
     <>
-    This is Sharedrop app
+      <div className="text-3xl font-bold items-center">
+        This is Sharedrop app
+      </div>
     </>
-  )
+  );
 }
 
 export default App
