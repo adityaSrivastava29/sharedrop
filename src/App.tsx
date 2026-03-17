@@ -11,6 +11,7 @@ function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/send" element={<SendPage />} />
+          <Route path="/receive/:roomId" element={<ReceivePage />} />
           <Route path="/receive" element={<ReceivePage />} />
         </Routes>
     </BrowserRouter>
