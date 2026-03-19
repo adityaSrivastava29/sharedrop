@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { Loader, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Loader, CheckCircle, AlertCircle, RefreshCw, Copy, Check } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { FileSelector } from '../components/FileSelector';
 import { QRGenerator } from '../components/QRGenerator';
@@ -66,9 +66,10 @@ export function SendPage() {
             <QRGenerator
               value={`${window.location.origin}${import.meta.env.BASE_URL}receive/${roomId}`}
             />
+            <PeerIdDisplay peerId={roomId} />
             {file && (
               <p className="text-surface-400 text-sm text-center">
-                Waiting for receiver to scan...
+                Waiting for receiver to scan or enter the Peer ID...
               </p>
             )}
             <div className="flex justify-center">
@@ -130,6 +131,36 @@ export function SendPage() {
         )}
       </div>
     </Layout>
+  );
+}
+
+function PeerIdDisplay({ peerId }: { peerId: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(peerId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="flex items-center justify-center gap-2 p-3 rounded-xl bg-surface-800/50 border border-surface-700/50">
+      <span className="text-surface-400 text-sm">Peer ID:</span>
+      <code className="text-primary-400 font-mono text-sm select-all">
+        {peerId}
+      </code>
+      <button
+        onClick={handleCopy}
+        className="p-1.5 rounded-lg hover:bg-surface-700/50 transition-colors"
+        title="Copy Peer ID"
+      >
+        {copied ? (
+          <Check className="w-4 h-4 text-success-400" />
+        ) : (
+          <Copy className="w-4 h-4 text-surface-400" />
+        )}
+      </button>
+    </div>
   );
 }
 
