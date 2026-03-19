@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Camera, Keyboard } from 'lucide-react';
 
@@ -9,9 +9,28 @@ interface QRScannerProps {
 
 export function QRScanner({ onScan, onError }: QRScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  const [mode, setMode] = useState<'camera' | 'manual'>('camera');
+  const onScanRef = useRef(onScan);
+  const onErrorRef = useRef(onError);
+  onScanRef.current = onScan;
+  onErrorRef.current = onError;
+
+  const [mode, setMode] = useState<'camera' | 'manual'>('manual');
   const [manualId, setManualId] = useState('');
   const [cameraError, setCameraError] = useState(false);
+
+  const extractRoomId = useCallback((text: string): string => {
+    try {
+      const url = new URL(text);
+      const parts = url.pathname.split('/');
+      const receiveIdx = parts.indexOf('receive');
+      if (receiveIdx !== -1 && parts[receiveIdx + 1]) {
+        return parts[receiveIdx + 1];
+      }
+    } catch {
+      // Not a URL
+    }
+    return text;
+  }, []);
 
   useEffect(() => {
     if (mode !== 'camera') return;
@@ -29,19 +48,8 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
           { fps: 10, qrbox: { width: 250, height: 250 } },
           (decodedText) => {
             if (!mounted) return;
-            // Extract room ID from URL or use raw text
-            try {
-              const url = new URL(decodedText);
-              const parts = url.pathname.split('/');
-              const receiveIdx = parts.indexOf('receive');
-              if (receiveIdx !== -1 && parts[receiveIdx + 1]) {
-                onScan(parts[receiveIdx + 1]);
-              } else {
-                onScan(decodedText);
-              }
-            } catch {
-              onScan(decodedText);
-            }
+            const roomId = extractRoomId(decodedText);
+            onScanRef.current(roomId);
             scanner.stop().catch(() => {});
           },
           () => {
@@ -52,7 +60,7 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
         if (mounted) {
           setCameraError(true);
           setMode('manual');
-          onError?.('Camera access denied. Please enter the room ID manually.');
+          onErrorRef.current?.('Camera access denied. Please enter the room ID manually.');
         }
       }
     };
@@ -64,26 +72,13 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
       scannerRef.current?.stop().catch(() => {});
       scannerRef.current = null;
     };
-  }, [mode, onScan, onError]);
+  }, [mode, extractRoomId]);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = manualId.trim();
     if (!trimmed) return;
-
-    // Handle if user pastes a full URL
-    try {
-      const url = new URL(trimmed);
-      const parts = url.pathname.split('/');
-      const receiveIdx = parts.indexOf('receive');
-      if (receiveIdx !== -1 && parts[receiveIdx + 1]) {
-        onScan(parts[receiveIdx + 1]);
-        return;
-      }
-    } catch {
-      // Not a URL, use as-is
-    }
-    onScan(trimmed);
+    onScan(extractRoomId(trimmed));
   };
 
   return (

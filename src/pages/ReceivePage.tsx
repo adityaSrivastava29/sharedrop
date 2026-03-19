@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Loader,
@@ -40,11 +40,14 @@ export function ReceivePage() {
     }
   }, [paramRoomId, reset, setRoomId, setRole]);
 
-  const handleScan = (scannedRoomId: string) => {
-    setRoomId(scannedRoomId);
-    setRole('receiver');
-    setJoinedRoomId(scannedRoomId);
-  };
+  const handleScan = useCallback(
+    (scannedRoomId: string) => {
+      setRoomId(scannedRoomId);
+      setRole('receiver');
+      setJoinedRoomId(scannedRoomId);
+    },
+    [setRoomId, setRole]
+  );
 
   const shouldConnect = joinedRoomId && connectionStatus !== 'idle';
 
