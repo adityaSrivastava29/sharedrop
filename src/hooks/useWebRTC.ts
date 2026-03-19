@@ -1,22 +1,16 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
+import Peer from 'peerjs';
+type DataConnection = ReturnType<Peer['connect']>;
 import { useTransferStore } from '../store/useTransferStore';
 
 const CHUNK_SIZE = 16384; // 16KB - safe for iOS Safari
 const MAX_BUFFERED = 262144; // 256KB
 const LOW_THRESHOLD = 65536; // 64KB
 
-const RTC_CONFIG: RTCConfiguration = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    // Add TURN server here for symmetric NAT traversal:
-    // { urls: 'turn:your-turn-server.com', username: '...', credential: '...' },
-  ],
-};
-
-const SIGNALING_URL =
-  import.meta.env.VITE_SIGNALING_URL || 'http://localhost:3001';
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
 
 interface UseWebRTCOptions {
   role: 'sender' | 'receiver';
@@ -24,9 +18,8 @@ interface UseWebRTCOptions {
 }
 
 export function useWebRTC({ role, roomId }: UseWebRTCOptions) {
-  const socketRef = useRef<Socket | null>(null);
-  const pcRef = useRef<RTCPeerConnection | null>(null);
-  const dcRef = useRef<RTCDataChannel | null>(null);
+  const peerRef = useRef<Peer | null>(null);
+  const connRef = useRef<DataConnection | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const cleanedUpRef = useRef(false);
 
@@ -37,7 +30,7 @@ export function useWebRTC({ role, roomId }: UseWebRTCOptions) {
       try {
         wakeLockRef.current = await navigator.wakeLock.request('screen');
       } catch {
-        // Non-critical - ignore (unsupported on iOS Safari)
+        // Non-critical - ignore
       }
     }
   }, []);
@@ -51,49 +44,22 @@ export function useWebRTC({ role, roomId }: UseWebRTCOptions) {
     if (cleanedUpRef.current) return;
     cleanedUpRef.current = true;
     releaseWakeLock();
-    dcRef.current?.close();
-    pcRef.current?.close();
-    socketRef.current?.disconnect();
-    dcRef.current = null;
-    pcRef.current = null;
-    socketRef.current = null;
+    connRef.current?.close();
+    peerRef.current?.destroy();
+    connRef.current = null;
+    peerRef.current = null;
   }, [releaseWakeLock]);
-
-  const createPeerConnection = useCallback(() => {
-    const pc = new RTCPeerConnection(RTC_CONFIG);
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socketRef.current?.emit('signal:ice-candidate', {
-          roomId,
-          candidate: event.candidate,
-        });
-      }
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'failed') {
-        store.getState().setConnectionStatus(
-          'error',
-          'Could not establish connection. Devices may be on incompatible networks.'
-        );
-      }
-    };
-
-    pcRef.current = pc;
-    return pc;
-  }, [roomId, store]);
 
   const sendFile = useCallback(
     async (file: File) => {
-      const dc = dcRef.current;
-      if (!dc || dc.readyState !== 'open') return;
+      const conn = connRef.current;
+      if (!conn || !conn.open) return;
 
       store.getState().setConnectionStatus('transferring');
       await acquireWakeLock();
 
-      // Send metadata
-      dc.send(
+      // Send metadata as JSON string
+      conn.send(
         JSON.stringify({
           type: 'metadata',
           name: file.name,
@@ -104,11 +70,14 @@ export function useWebRTC({ role, roomId }: UseWebRTCOptions) {
 
       // Send file in chunks with backpressure
       let offset = 0;
-      dc.bufferedAmountLowThreshold = LOW_THRESHOLD;
+      const dc = conn.dataChannel;
+      if (dc) {
+        dc.bufferedAmountLowThreshold = LOW_THRESHOLD;
+      }
 
       const sendNextChunks = () => {
         while (offset < file.size) {
-          if (dc.bufferedAmount > MAX_BUFFERED) {
+          if (dc && dc.bufferedAmount > MAX_BUFFERED) {
             dc.onbufferedamountlow = () => {
               dc.onbufferedamountlow = null;
               sendNextChunks();
@@ -121,11 +90,11 @@ export function useWebRTC({ role, roomId }: UseWebRTCOptions) {
           offset = end;
 
           slice.arrayBuffer().then((buf) => {
-            dc.send(buf);
+            conn.send(buf);
             store.getState().updateProgress(offset);
 
             if (offset >= file.size) {
-              dc.send(JSON.stringify({ type: 'end' }));
+              conn.send(JSON.stringify({ type: 'end' }));
               store.getState().setConnectionStatus('completed');
               releaseWakeLock();
             }
@@ -145,166 +114,187 @@ export function useWebRTC({ role, roomId }: UseWebRTCOptions) {
 
   useEffect(() => {
     cleanedUpRef.current = false;
-    const socket = io(SIGNALING_URL, { transports: ['websocket', 'polling'] });
-    socketRef.current = socket;
 
-    socket.on('connect_error', () => {
-      store
-        .getState()
-        .setConnectionStatus(
-          'error',
-          'Cannot reach signaling server. Check your connection.'
-        );
-    });
+    const setupConnection = (conn: DataConnection) => {
+      connRef.current = conn;
 
-    socket.on('error', ({ message }: { message: string }) => {
-      store.getState().setConnectionStatus('error', message);
-    });
-
-    socket.on('peer:left', () => {
-      const status = store.getState().connectionStatus;
-      if (status !== 'completed') {
-        store
-          .getState()
-          .setConnectionStatus('error', 'The other device disconnected.');
-      }
-    });
-
-    if (role === 'sender') {
-      // Sender flow
-      socket.emit('room:create', { roomId });
-      store.getState().setConnectionStatus('waiting');
-
-      socket.on('peer:joined', async () => {
-        store.getState().setConnectionStatus('connecting');
-
-        const pc = createPeerConnection();
-        const dc = pc.createDataChannel('file-transfer', { ordered: true });
-        dcRef.current = dc;
-
-        dc.binaryType = 'arraybuffer';
-
-        dc.onopen = () => {
+      conn.on('open', () => {
+        if (role === 'sender') {
           store.getState().setConnectionStatus('connected');
           // Auto-send if file is already selected
           const file = store.getState().file;
           if (file) {
             sendFile(file);
           }
-        };
-
-        dc.onclose = () => {
-          const status = store.getState().connectionStatus;
-          if (status === 'transferring') {
-            store
-              .getState()
-              .setConnectionStatus(
-                'error',
-                'Transfer interrupted. Connection was lost.'
-              );
-          }
-        };
-
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('signal:offer', { roomId, offer });
+        } else {
+          store.getState().setConnectionStatus('connecting');
+        }
       });
 
-      socket.on(
-        'signal:answer',
-        async ({ answer }: { answer: RTCSessionDescriptionInit }) => {
-          await pcRef.current?.setRemoteDescription(answer);
+      conn.on('close', () => {
+        const status = store.getState().connectionStatus;
+        if (status === 'transferring') {
+          store
+            .getState()
+            .setConnectionStatus(
+              'error',
+              'Transfer interrupted. Connection was lost.'
+            );
+        } else if (status !== 'completed') {
+          store
+            .getState()
+            .setConnectionStatus('error', 'The other device disconnected.');
         }
-      );
-    } else {
-      // Receiver flow
-      socket.emit('room:join', { roomId });
-      store.getState().setConnectionStatus('connecting');
+      });
 
-      socket.on(
-        'signal:offer',
-        async ({ offer }: { offer: RTCSessionDescriptionInit }) => {
-          const pc = createPeerConnection();
+      conn.on('error', (err) => {
+        store
+          .getState()
+          .setConnectionStatus('error', err.message || 'Connection error.');
+      });
 
-          pc.ondatachannel = (event) => {
-            const dc = event.channel;
-            dcRef.current = dc;
-            dc.binaryType = 'arraybuffer';
+      if (role === 'receiver') {
+        const chunks: ArrayBuffer[] = [];
 
-            const chunks: ArrayBuffer[] = [];
+        conn.on('data', async (data) => {
+          if (typeof data === 'string') {
+            const msg = JSON.parse(data);
+            if (msg.type === 'metadata') {
+              store.getState().setFileMetadata({
+                name: msg.name,
+                size: msg.size,
+                type: msg.mimeType,
+              });
+              store.getState().setConnectionStatus('transferring');
+              await acquireWakeLock();
+            } else if (msg.type === 'end') {
+              const meta = store.getState().fileMetadata;
+              const blob = new Blob(chunks, {
+                type: meta?.type || 'application/octet-stream',
+              });
+              const url = URL.createObjectURL(blob);
 
-            dc.onmessage = async (e) => {
-              if (typeof e.data === 'string') {
-                const msg = JSON.parse(e.data);
-                if (msg.type === 'metadata') {
-                  store.getState().setFileMetadata({
-                    name: msg.name,
-                    size: msg.size,
-                    type: msg.mimeType,
-                  });
-                  store.getState().setConnectionStatus('transferring');
-                  await acquireWakeLock();
-                } else if (msg.type === 'end') {
-                  const meta = store.getState().fileMetadata;
-                  const blob = new Blob(chunks, {
-                    type: meta?.type || 'application/octet-stream',
-                  });
-                  const url = URL.createObjectURL(blob);
+              // Trigger download
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = meta?.name || 'download';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
 
-                  // Trigger download
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = meta?.name || 'download';
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
+              store.getState().setConnectionStatus('completed');
+              releaseWakeLock();
 
-                  // Keep URL for manual download button
-                  store.getState().setConnectionStatus('completed');
-                  releaseWakeLock();
-
-                  // Clean up URL after a delay
-                  setTimeout(() => URL.revokeObjectURL(url), 60000);
-                }
-              } else {
-                // Binary chunk
-                chunks.push(e.data as ArrayBuffer);
-                const totalReceived = chunks.reduce(
-                  (sum, c) => sum + c.byteLength,
-                  0
-                );
-                store.getState().updateProgress(totalReceived);
-              }
-            };
-
-            dc.onclose = () => {
-              const status = store.getState().connectionStatus;
-              if (status === 'transferring') {
-                store
-                  .getState()
-                  .setConnectionStatus(
-                    'error',
-                    'Transfer interrupted. Connection was lost.'
-                  );
-              }
-            };
-          };
-
-          await pc.setRemoteDescription(offer);
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          socket.emit('signal:answer', { roomId, answer });
-        }
-      );
-    }
-
-    // ICE candidate handling (both roles)
-    socket.on(
-      'signal:ice-candidate',
-      ({ candidate }: { candidate: RTCIceCandidateInit }) => {
-        pcRef.current?.addIceCandidate(candidate);
+              setTimeout(() => URL.revokeObjectURL(url), 60000);
+            }
+          } else {
+            // Binary chunk
+            const buf =
+              data instanceof ArrayBuffer
+                ? data
+                : (data as Blob).arrayBuffer
+                  ? await (data as Blob).arrayBuffer()
+                  : data;
+            chunks.push(buf as ArrayBuffer);
+            const totalReceived = chunks.reduce(
+              (sum, c) => sum + c.byteLength,
+              0
+            );
+            store.getState().updateProgress(totalReceived);
+          }
+        });
       }
-    );
+    };
+
+    if (role === 'sender') {
+      // Sender: register with the room ID as peer ID, wait for receiver
+      const peer = new Peer(roomId, {
+        config: { iceServers: ICE_SERVERS },
+      });
+      peerRef.current = peer;
+
+      peer.on('open', () => {
+        store.getState().setConnectionStatus('waiting');
+      });
+
+      peer.on('connection', (conn) => {
+        store.getState().setConnectionStatus('connecting');
+        setupConnection(conn);
+      });
+
+      peer.on('error', (err) => {
+        if (err.type === 'unavailable-id') {
+          store
+            .getState()
+            .setConnectionStatus(
+              'error',
+              'Room ID is already in use. Please try again.'
+            );
+        } else if (err.type === 'network' || err.type === 'server-error') {
+          store
+            .getState()
+            .setConnectionStatus(
+              'error',
+              'Cannot reach signaling server. Check your connection.'
+            );
+        } else {
+          store
+            .getState()
+            .setConnectionStatus(
+              'error',
+              err.message || 'Connection failed.'
+            );
+        }
+      });
+
+      peer.on('disconnected', () => {
+        const status = store.getState().connectionStatus;
+        if (status !== 'completed' && status !== 'error') {
+          // Try to reconnect once
+          peer.reconnect();
+        }
+      });
+    } else {
+      // Receiver: connect to sender's peer ID
+      const peer = new Peer({
+        config: { iceServers: ICE_SERVERS },
+      });
+      peerRef.current = peer;
+
+      peer.on('open', () => {
+        store.getState().setConnectionStatus('connecting');
+        const conn = peer.connect(roomId, {
+          reliable: true,
+          serialization: 'none',
+        });
+        setupConnection(conn);
+      });
+
+      peer.on('error', (err) => {
+        if (err.type === 'peer-unavailable') {
+          store
+            .getState()
+            .setConnectionStatus(
+              'error',
+              'Room not found. The sender may have disconnected.'
+            );
+        } else if (err.type === 'network' || err.type === 'server-error') {
+          store
+            .getState()
+            .setConnectionStatus(
+              'error',
+              'Cannot reach signaling server. Check your connection.'
+            );
+        } else {
+          store
+            .getState()
+            .setConnectionStatus(
+              'error',
+              err.message || 'Connection failed.'
+            );
+        }
+      });
+    }
 
     // Re-acquire wake lock on visibility change
     const handleVisibility = () => {
@@ -321,16 +311,7 @@ export function useWebRTC({ role, roomId }: UseWebRTCOptions) {
       document.removeEventListener('visibilitychange', handleVisibility);
       cleanup();
     };
-  }, [
-    role,
-    roomId,
-    store,
-    createPeerConnection,
-    sendFile,
-    acquireWakeLock,
-    releaseWakeLock,
-    cleanup,
-  ]);
+  }, [role, roomId, store, sendFile, acquireWakeLock, releaseWakeLock, cleanup]);
 
   return { sendFile, cancelTransfer, disconnect: cleanup };
 }
